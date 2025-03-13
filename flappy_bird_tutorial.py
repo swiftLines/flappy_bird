@@ -8,7 +8,6 @@ pygame.font.init()
 WIN_WIDTH = 600
 WIN_HEIGHT = 800
 
-
 BIRD_IMGS = [pygame.transform.scale2x(pygame.image.load(os.path.join("imgs", "bird1.png"))), pygame.transform.scale2x(pygame.image.load(os.path.join("imgs", "bird2.png"))), pygame.transform.scale2x(pygame.image.load(os.path.join("imgs", "bird3.png")))]
 PIPE_IMG = pygame.transform.scale2x(pygame.image.load(os.path.join("imgs", "pipe.png")))
 BASE_IMG = pygame.transform.scale2x(pygame.image.load(os.path.join("imgs", "base.png")))
@@ -16,6 +15,7 @@ BG_IMG = pygame.transform.scale2x(pygame.image.load(os.path.join("imgs", "bg.png
 
 STAT_FONT = pygame.font.SysFont("comicsans", 50)
 
+GEN = 0
 
 class Bird: 
     IMGS = BIRD_IMGS
@@ -155,7 +155,7 @@ class Base:
         win.blit(self.IMG, (self.x2, self.y))
         
 
-def draw_window(win, bird, pipes, base, score):
+def draw_window(win, birds, pipes, base, score, gen):
     win.blit(BG_IMG, (0,0))
 
     for pipe in pipes:
@@ -164,19 +164,26 @@ def draw_window(win, bird, pipes, base, score):
     text = STAT_FONT.render("Score: " + str(score), 1, (255,255,255))
     win.blit(text, (WIN_WIDTH - 10 - text.get_width(), 10))
 
+    text = STAT_FONT.render("Gen: " + str(gen), 1, (255,255,255))
+    win.blit(text, (10, 10))
+
     base.draw(win)
 
-    bird.draw(win)
+    for bird in birds:
+        bird.draw(win)
+
     pygame.display.update()
 
 
 def main(genomes, config):
+    global GEN
+    GEN += 1
     nets = []
     ge = []
     birds = []
 
-    for g in genomes:
-        net = neat.nn.FeedForwardNetwork(g, config)
+    for _, g in genomes:
+        net = neat.nn.FeedForwardNetwork.create(g, config)
         nets.append(net)
         birds.append(Bird(230, 350))
         g.fitness = 0
@@ -195,8 +202,32 @@ def main(genomes, config):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 run = False
+                pygame.quit()
+                quit()
         
-        # bird.move()
+        pipe_ind = 0
+        if len(birds) > 0:
+            # determine whether to use the first or second
+            # pipe on the screen for neural network input
+            # Once pipe is passed, make it the second pipe in list
+            if len(pipes) > 1 and birds[0].x > pipes[0].x + pipes[0].PIPE_TOP.get_width():
+                pipe_ind = 1
+        # else:
+        #     run = False
+        #     break
+        
+        for x, bird in enumerate(birds):
+            bird.move()
+            ge[x].fitness += 0.1
+
+        # send bird location, top pipe location and bottom pipe location and determine from network whether to jump or not
+        output = nets[x].activate((bird.y, abs(bird.y - pipes[pipe_ind].height), abs(bird.y - pipes[pipe_ind].bottom)))
+
+        if output[0] > 0.5:
+            bird.jump()
+
+        base.move()
+
         add_pipe = False
         rem = []
         for pipe in pipes:
@@ -226,18 +257,16 @@ def main(genomes, config):
             pipes.remove(r)
 
         for x, bird in enumerate(birds):
-            if bird.y + bird.img.get_height() >= 730:
+            if bird.y + bird.img.get_height() >= 730 or bird.y < 0:
                 birds.pop(x)
                 nets.pop(x)
                 ge.pop(x)
 
-        base.move()
-        draw_window(win, bird, pipes, base, score)
+        # base.move()
+        draw_window(win, birds, pipes, base, score, GEN)
 
-    pygame.quit()
-    quit()
-
-main()
+        # if len(birds) == 0:
+        #     break
 
 
 def run(config_path):
